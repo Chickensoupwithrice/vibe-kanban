@@ -76,9 +76,26 @@ async fn device_poll(
     {
         let config_path = utils::assets::config_path();
         let mut config = deployment.config().write().await;
-        config.github.username = Some(user_info.username.clone());
-        config.github.primary_email = user_info.primary_email.clone();
-        config.github.oauth_token = Some(user_info.token.to_string());
+        
+        // Update GitHub forge config or create if doesn't exist
+        if let Some(github_config) = config.github_config_mut() {
+            github_config.username = Some(user_info.username.clone());
+            github_config.primary_email = user_info.primary_email.clone();
+            github_config.oauth_token = Some(user_info.token.to_string());
+        } else {
+            // Create new GitHub config if none exists
+            use services::services::forge::types::{ForgeConfig, ForgeType};
+            config.forges.push(ForgeConfig {
+                forge_type: ForgeType::GitHub,
+                pat: None,
+                oauth_token: Some(user_info.token.to_string()),
+                username: Some(user_info.username.clone()),
+                primary_email: user_info.primary_email.clone(),
+                default_pr_base: Some("main".to_string()),
+                base_url: None,
+            });
+        }
+        
         config.github_login_acknowledged = true; // Also acknowledge the GitHub login step
         save_config_to_file(&config.clone(), &config_path).await?;
     }
@@ -99,8 +116,9 @@ async fn device_poll(
 async fn github_check_token(
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<CheckTokenResponse>>, ApiError> {
-    let gh_config = deployment.config().read().await.github.clone();
-    let Some(token) = gh_config.token() else {
+    let config = deployment.config().read().await;
+    let gh_config = config.github_config();
+    let Some(token) = gh_config.and_then(|c| c.token()) else {
         return Ok(ResponseJson(ApiResponse::success(
             CheckTokenResponse::Invalid,
         )));

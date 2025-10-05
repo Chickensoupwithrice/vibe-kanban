@@ -49,18 +49,21 @@ pub async fn list_repositories(
     // Get GitHub configuration
     let github_config = {
         let config = app_state.get_config().read().await;
-        config.github.clone()
+        config.github_config().cloned()
     };
 
     // Check if GitHub is configured
-    if github_config.token.is_none() {
+    let Some(github_config) = github_config else {
         return Ok(ResponseJson(ApiResponse::error(
             "GitHub token not configured. Please authenticate with GitHub first.",
         )));
-    }
+    };
 
-    // Create GitHub service with token
-    let github_token = github_config.token.as_deref().unwrap();
+    let Some(github_token) = github_config.token() else {
+        return Ok(ResponseJson(ApiResponse::error(
+            "GitHub token not configured. Please authenticate with GitHub first.",
+        )));
+    };
     let github_service = match GitHubService::new(github_token) {
         Ok(service) => service,
         Err(e) => {
@@ -136,7 +139,7 @@ pub async fn create_project_from_github(
     // Get GitHub token
     let github_token = {
         let config = app_state.get_config().read().await;
-        config.github.token.clone()
+        config.github_config().and_then(|c| c.token())
     };
 
     // Clone the repository

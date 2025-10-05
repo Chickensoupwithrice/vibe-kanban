@@ -89,8 +89,11 @@ impl PrMonitorService {
 
     /// Check the status of a specific PR
     async fn check_pr_status(&self, pr_merge: &PrMerge) -> Result<(), PrMonitorError> {
-        let github_config = self.config.read().await.github.clone();
-        let github_token = github_config.token().ok_or(PrMonitorError::NoGitHubToken)?;
+        let config = self.config.read().await;
+        let github_config = config.github_config().cloned();
+        let github_token = github_config
+            .and_then(|c| c.token())
+            .ok_or(PrMonitorError::NoGitHubToken)?;
 
         let github_service = GitHubService::new(&github_token)?;
 

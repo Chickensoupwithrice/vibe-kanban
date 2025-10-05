@@ -1146,8 +1146,9 @@ pub async fn push_task_attempt_branch(
     Extension(task_attempt): Extension<TaskAttempt>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
-    let github_config = deployment.config().read().await.github.clone();
-    let Some(github_token) = github_config.token() else {
+    let config = deployment.config().read().await;
+    let github_config = config.github_config().cloned();
+    let Some(github_token) = github_config.and_then(|c| c.token()) else {
         return Err(GitHubServiceError::TokenInvalid.into());
     };
 
@@ -1177,8 +1178,9 @@ pub async fn create_github_pr(
     State(deployment): State<DeploymentImpl>,
     Json(request): Json<CreateGitHubPrRequest>,
 ) -> Result<ResponseJson<ApiResponse<String, GitHubServiceError>>, ApiError> {
-    let github_config = deployment.config().read().await.github.clone();
-    let Some(github_token) = github_config.token() else {
+    let config = deployment.config().read().await;
+    let github_config = config.github_config().cloned();
+    let Some(github_token) = github_config.as_ref().and_then(|c| c.token()) else {
         return Ok(ResponseJson(ApiResponse::error_with_data(
             GitHubServiceError::TokenInvalid,
         )));
@@ -1193,9 +1195,9 @@ pub async fn create_github_pr(
             task_attempt.base_branch.clone()
         } else {
             github_config
-                .default_pr_base
                 .as_ref()
-                .map_or_else(|| "main".to_string(), |b| b.to_string())
+                .and_then(|c| c.default_pr_base.clone())
+                .unwrap_or_else(|| "main".to_string())
         }
     });
 
@@ -1503,9 +1505,10 @@ pub async fn get_task_attempt_branch_status(
 
     // check remote status if the attempt has an open PR or the base_branch is a remote branch
     if has_open_pr || base_branch_type == BranchType::Remote {
-        let github_config = deployment.config().read().await.github.clone();
+        let config = deployment.config().read().await;
+        let github_config = config.github_config().cloned();
         let token = github_config
-            .token()
+            .and_then(|c| c.token())
             .ok_or(ApiError::GitHubService(GitHubServiceError::TokenInvalid))?;
 
         // For an attempt with a remote base branch, we compare against that
@@ -1537,7 +1540,8 @@ pub async fn rebase_task_attempt(
     // Extract new base branch from request body if provided
     let new_base_branch = request_body.and_then(|body| body.new_base_branch.clone());
 
-    let github_config = deployment.config().read().await.github.clone();
+    let config = deployment.config().read().await;
+    let github_config = config.github_config().cloned();
 
     let pool = &deployment.db().pool;
 
@@ -1562,7 +1566,7 @@ pub async fn rebase_task_attempt(
         worktree_path,
         effective_base_branch.clone().as_deref(),
         &ctx.task_attempt.base_branch.clone(),
-        github_config.token(),
+        github_config.and_then(|c| c.token()),
     );
     if let Err(e) = result {
         use services::services::git::GitServiceError;
