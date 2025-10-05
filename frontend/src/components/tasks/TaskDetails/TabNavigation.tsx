@@ -25,17 +25,18 @@ function TabNavigation({
   ];
 
   const getTabClassName = (tabId: TabType) => {
-    const baseClasses = 'flex items-center py-2 px-2 text-sm font-medium';
-    const activeClasses = 'text-primary-foreground';
+    const baseClasses =
+      'flex items-center py-3 px-3 md:py-2 md:px-2 text-sm font-medium rounded-md transition-colors';
+    const activeClasses = 'text-primary-foreground bg-primary/10';
     const inactiveClasses =
-      'text-secondary-foreground hover:text-primary-foreground';
+      'text-secondary-foreground hover:text-primary-foreground hover:bg-primary/5';
 
     return `${baseClasses} ${activeTab === tabId ? activeClasses : inactiveClasses}`;
   };
 
   return (
     <div className="border-b border-dashed bg-background sticky top-0 z-10">
-      <div className="flex items-center px-3 space-x-3">
+      <div className="flex items-center px-2 md:px-3 space-x-1 md:space-x-3">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}

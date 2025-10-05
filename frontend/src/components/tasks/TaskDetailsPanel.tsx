@@ -125,10 +125,10 @@ export function TaskDetailsPanel({
                     )}
 
                     {isFullScreen ? (
-                      <div className="flex-1 min-h-0 flex">
-                        {/* Sidebar */}
+                      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+                        {/* Sidebar - hidden on mobile */}
                         <aside
-                          className={`w-[28rem] shrink-0 border-r overflow-y-auto ${inIframe() ? 'hidden' : ''}`}
+                          className={`w-full md:w-[28rem] shrink-0 border-r overflow-y-auto ${inIframe() ? 'hidden' : 'hidden md:block'}`}
                         >
                           {/* Fullscreen sidebar shows title and description above edit/delete */}
                           <div className="space-y-2 p-3">
@@ -207,7 +207,6 @@ export function TaskDetailsPanel({
                             attempts={attempts}
                             selectedAttempt={selectedAttempt}
                             setSelectedAttempt={setSelectedAttempt}
-                            // hide actions in sidebar; moved to header in fullscreen
                           />
                         ) : (
                           <>
@@ -217,15 +216,33 @@ export function TaskDetailsPanel({
                               selectedAttempt={selectedAttempt}
                               task={task}
                               projectId={projectId}
-                              // onCreateNewAttempt={() => {
-                              //   // TODO: Implement create new attempt
-                              //   console.log('Create new attempt');
-                              // }}
                               onJumpToDiffFullScreen={jumpToDiffFullScreen}
                             />
 
                             {selectedAttempt && (
-                              <LogsTab selectedAttempt={selectedAttempt} />
+                              <>
+                                <TabNavigation
+                                  activeTab={activeTab}
+                                  setActiveTab={setActiveTab}
+                                  selectedAttempt={selectedAttempt}
+                                />
+
+                                <div className="flex-1 flex flex-col min-h-0">
+                                  {activeTab === 'diffs' ? (
+                                    <DiffTab
+                                      selectedAttempt={selectedAttempt}
+                                    />
+                                  ) : activeTab === 'processes' ? (
+                                    <ProcessesTab
+                                      attemptId={selectedAttempt?.id}
+                                    />
+                                  ) : (
+                                    <LogsTab
+                                      selectedAttempt={selectedAttempt}
+                                    />
+                                  )}
+                                </div>
+                              </>
                             )}
 
                             <TaskFollowUpSection

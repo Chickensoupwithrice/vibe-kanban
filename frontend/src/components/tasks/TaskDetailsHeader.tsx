@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Edit, Trash2, X, Maximize2, Minimize2 } from 'lucide-react';
+import { Edit, Trash2, X, Maximize2, Minimize2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -39,16 +39,34 @@ function TaskDetailsHeader({
         className="flex shrink-0 items-center gap-2 border-b border-dashed bg-background"
         style={{}}
       >
-        <div className="p-3 flex flex-1 items-center truncate">
+        <div className="p-3 flex flex-1 items-center truncate gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="md:hidden shrink-0"
+                  aria-label="Back to task list"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Back to task list</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <div
-            className="h-2 w-2 rounded-full inline-block"
+            className="h-2 w-2 rounded-full shrink-0"
             style={{
               backgroundColor: `hsl(var(${statusBoardColors[task.status]}))`,
             }}
           />
-          <p className="ml-2 text-sm">{statusLabels[task.status]}</p>
+          <p className="ml-2 text-sm truncate">{statusLabels[task.status]}</p>
         </div>
-        <div className="mr-3">
+        <div className="mr-3 flex items-center">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -56,6 +74,7 @@ function TaskDetailsHeader({
                   variant="ghost"
                   size="icon"
                   onClick={() => toggleFullscreen(!isFullScreen)}
+                  className="hidden md:inline-flex"
                   aria-label={
                     isFullScreen
                       ? 'Collapse to sidebar'

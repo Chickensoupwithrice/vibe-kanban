@@ -86,42 +86,6 @@ export const keyBindings: KeyBinding[] = [
     description: 'Focus search',
     group: 'Navigation',
   },
-  {
-    action: Action.NAV_UP,
-    keys: ['up', 'k'],
-    scopes: [Scope.KANBAN],
-    description: 'Move up within column',
-    group: 'Navigation',
-  },
-  {
-    action: Action.NAV_DOWN,
-    keys: ['down', 'j'],
-    scopes: [Scope.KANBAN],
-    description: 'Move down within column',
-    group: 'Navigation',
-  },
-  {
-    action: Action.NAV_LEFT,
-    keys: ['left', 'h'],
-    scopes: [Scope.KANBAN],
-    description: 'Move to previous column',
-    group: 'Navigation',
-  },
-  {
-    action: Action.NAV_RIGHT,
-    keys: ['right', 'l'],
-    scopes: [Scope.KANBAN],
-    description: 'Move to next column',
-    group: 'Navigation',
-  },
-  {
-    action: Action.OPEN_DETAILS,
-    keys: 'enter',
-    scopes: [Scope.KANBAN],
-    description: 'Open selected task details',
-    group: 'Kanban',
-  },
-
   // Global actions
   {
     action: Action.SHOW_HELP,
@@ -129,15 +93,6 @@ export const keyBindings: KeyBinding[] = [
     scopes: [Scope.GLOBAL],
     description: 'Show keyboard shortcuts help',
     group: 'Global',
-  },
-
-  // Task panel actions
-  {
-    action: Action.TOGGLE_FULLSCREEN,
-    keys: 'enter',
-    scopes: [Scope.KANBAN],
-    description: 'Toggle fullscreen view',
-    group: 'Task Details',
   },
 
   // Task actions

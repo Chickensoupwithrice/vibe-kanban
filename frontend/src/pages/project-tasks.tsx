@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertTriangle, Plus } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
-import { projectsApi, tasksApi, attemptsApi } from '@/lib/api';
+import { projectsApi, attemptsApi } from '@/lib/api';
 import { openTaskForm } from '@/lib/openTaskForm';
 
 import { useSearch } from '@/contexts/search-context';
@@ -15,25 +15,13 @@ import {
   useKeyCreate,
   useKeyExit,
   useKeyFocusSearch,
-  useKeyNavUp,
-  useKeyNavDown,
-  useKeyNavLeft,
-  useKeyNavRight,
-  useKeyOpenDetails,
   Scope,
-  useKeyToggleFullscreen,
   useKeyDeleteTask,
 } from '@/keyboard';
 
-import {
-  getKanbanSectionClasses,
-  getMainContainerClasses,
-} from '@/lib/responsive-config';
-
-import TaskKanbanBoard from '@/components/tasks/TaskKanbanBoard';
 import { TaskDetailsPanel } from '@/components/tasks/TaskDetailsPanel';
+import { ThreadList } from '@/components/tasks/ThreadList';
 import type { TaskWithAttemptStatus, Project, TaskAttempt } from 'shared/types';
-import type { DragEndEvent } from '@/components/ui/shadcn-io/kanban';
 import { useProjectTasks } from '@/hooks/useProjectTasks';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import NiceModal from '@ebay/nice-modal-react';
@@ -75,20 +63,14 @@ export function ProjectTasks() {
     }
   };
 
-  const handleDuplicateTask = (task: Task) => {
-    if (project?.id) {
-      openTaskForm({ projectId: project.id, initialTask: task });
-    }
-  };
   const { query: searchQuery, focusInput } = useSearch();
 
   // Panel state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  // Fullscreen state using custom hook
-  const { isFullscreen, navigateToTask, navigateToAttempt, toggleFullscreen } =
-    useTaskViewManager();
+  // Navigation helpers
+  const { navigateToTask, navigateToAttempt } = useTaskViewManager();
 
   // Attempts fetching (only when task is selected)
   const { data: attempts = [] } = useQuery({
@@ -169,11 +151,7 @@ export function ProjectTasks() {
   useKeyExit(
     () => {
       if (isPanelOpen) {
-        if (isFullscreen) {
-          toggleFullscreen(false);
-        } else {
-          handleClosePanel();
-        }
+        handleClosePanel();
       } else {
         navigate('/projects');
       }
@@ -181,91 +159,24 @@ export function ProjectTasks() {
     { scope: Scope.KANBAN }
   );
 
-  // Toggle fullscreen with Cmd+Enter
-  useKeyToggleFullscreen(() => toggleFullscreen(!isFullscreen), {
-    scope: Scope.KANBAN,
-  });
-
-  // Navigation shortcuts using semantic hooks
-  const taskStatuses = [
-    'todo',
-    'inprogress',
-    'inreview',
-    'done',
-    'cancelled',
-  ] as const;
-
-  // Memoize filtered tasks based on search query
+  // Memoize filtered tasks based on search query and sort by most recent
   const filteredTasks = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return tasks;
+    let filtered = tasks;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = tasks.filter(
+        (task) =>
+          task.title.toLowerCase().includes(query) ||
+          (task.description && task.description.toLowerCase().includes(query))
+      );
     }
-    const query = searchQuery.toLowerCase();
-    return tasks.filter(
-      (task) =>
-        task.title.toLowerCase().includes(query) ||
-        (task.description && task.description.toLowerCase().includes(query))
-    );
+    // Sort by most recent updated_at
+    return [...filtered].sort((a, b) => {
+      const aTime = new Date(a.updated_at || a.created_at).getTime();
+      const bTime = new Date(b.updated_at || b.created_at).getTime();
+      return bTime - aTime;
+    });
   }, [tasks, searchQuery]);
-
-  // Memoize grouped filtered tasks
-  const groupedFilteredTasks = useMemo(() => {
-    const groups: Record<string, Task[]> = {};
-    taskStatuses.forEach((status) => {
-      groups[status] = [];
-    });
-    filteredTasks.forEach((task) => {
-      const normalizedStatus = task.status.toLowerCase();
-      if (groups[normalizedStatus]) {
-        groups[normalizedStatus].push(task);
-      } else {
-        groups['todo'].push(task);
-      }
-    });
-    return groups;
-  }, [filteredTasks]);
-
-  useKeyNavUp(
-    () => {
-      selectPreviousTask();
-    },
-    {
-      scope: Scope.KANBAN,
-      preventDefault: true,
-    }
-  );
-
-  useKeyNavDown(
-    () => {
-      selectNextTask();
-    },
-    {
-      scope: Scope.KANBAN,
-      preventDefault: true,
-    }
-  );
-
-  useKeyNavLeft(
-    () => {
-      selectPreviousColumn();
-    },
-    {
-      scope: Scope.KANBAN,
-      preventDefault: true, // Prevent page scroll
-    }
-  );
-
-  useKeyNavRight(
-    () => {
-      selectNextColumn();
-    },
-    {
-      scope: Scope.KANBAN,
-      preventDefault: true, // Prevent page scroll
-    }
-  );
-
-  useKeyOpenDetails(() => {}, { scope: Scope.KANBAN });
 
   // Delete task shortcut
   useKeyDeleteTask(
@@ -279,8 +190,6 @@ export function ProjectTasks() {
       preventDefault: true,
     }
   );
-
-  // Full screen
 
   const fetchProject = useCallback(async () => {
     try {
@@ -327,141 +236,15 @@ export function ProjectTasks() {
     [handleEditTask]
   );
 
-  const handleDuplicateTaskCallback = useCallback(
-    (task: Task) => {
-      handleDuplicateTask(task);
-    },
-    [handleDuplicateTask]
-  );
-
   const handleViewTaskDetails = useCallback(
-    (task: Task, attemptIdToShow?: string, fullscreen?: boolean) => {
+    (task: Task, attemptIdToShow?: string) => {
       if (attemptIdToShow) {
-        navigateToAttempt(projectId!, task.id, attemptIdToShow, { fullscreen });
+        navigateToAttempt(projectId!, task.id, attemptIdToShow);
       } else {
-        navigateToTask(projectId!, task.id, { fullscreen });
+        navigateToTask(projectId!, task.id);
       }
     },
     [projectId, navigateToTask, navigateToAttempt]
-  );
-
-  // Navigation functions that use filtered/grouped tasks
-  const selectNextTask = useCallback(() => {
-    if (selectedTask) {
-      const tasksInStatus = groupedFilteredTasks[selectedTask.status] || [];
-      const currentIndex = tasksInStatus.findIndex(
-        (task) => task.id === selectedTask.id
-      );
-      if (currentIndex >= 0 && currentIndex < tasksInStatus.length - 1) {
-        handleViewTaskDetails(tasksInStatus[currentIndex + 1]);
-      }
-    } else {
-      // Find first non-empty column
-      for (const status of taskStatuses) {
-        const tasks = groupedFilteredTasks[status];
-        if (tasks && tasks.length > 0) {
-          handleViewTaskDetails(tasks[0]);
-          break;
-        }
-      }
-    }
-  }, [selectedTask, groupedFilteredTasks, handleViewTaskDetails]);
-
-  const selectPreviousTask = useCallback(() => {
-    if (selectedTask) {
-      const tasksInStatus = groupedFilteredTasks[selectedTask.status] || [];
-      const currentIndex = tasksInStatus.findIndex(
-        (task) => task.id === selectedTask.id
-      );
-      if (currentIndex > 0) {
-        handleViewTaskDetails(tasksInStatus[currentIndex - 1]);
-      }
-    } else {
-      // Find first non-empty column
-      for (const status of taskStatuses) {
-        const tasks = groupedFilteredTasks[status];
-        if (tasks && tasks.length > 0) {
-          handleViewTaskDetails(tasks[0]);
-          break;
-        }
-      }
-    }
-  }, [selectedTask, groupedFilteredTasks, handleViewTaskDetails]);
-
-  const selectNextColumn = useCallback(() => {
-    if (selectedTask) {
-      const currentIndex = taskStatuses.findIndex(
-        (status) => status === selectedTask.status
-      );
-      // Find next non-empty column
-      for (let i = currentIndex + 1; i < taskStatuses.length; i++) {
-        const tasks = groupedFilteredTasks[taskStatuses[i]];
-        if (tasks && tasks.length > 0) {
-          handleViewTaskDetails(tasks[0]);
-          return;
-        }
-      }
-    } else {
-      // Find first non-empty column
-      for (const status of taskStatuses) {
-        const tasks = groupedFilteredTasks[status];
-        if (tasks && tasks.length > 0) {
-          handleViewTaskDetails(tasks[0]);
-          break;
-        }
-      }
-    }
-  }, [selectedTask, groupedFilteredTasks, handleViewTaskDetails]);
-
-  const selectPreviousColumn = useCallback(() => {
-    if (selectedTask) {
-      const currentIndex = taskStatuses.findIndex(
-        (status) => status === selectedTask.status
-      );
-      // Find previous non-empty column
-      for (let i = currentIndex - 1; i >= 0; i--) {
-        const tasks = groupedFilteredTasks[taskStatuses[i]];
-        if (tasks && tasks.length > 0) {
-          handleViewTaskDetails(tasks[0]);
-          return;
-        }
-      }
-    } else {
-      // Find first non-empty column
-      for (const status of taskStatuses) {
-        const tasks = groupedFilteredTasks[status];
-        if (tasks && tasks.length > 0) {
-          handleViewTaskDetails(tasks[0]);
-          break;
-        }
-      }
-    }
-  }, [selectedTask, groupedFilteredTasks, handleViewTaskDetails]);
-
-  const handleDragEnd = useCallback(
-    async (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || !active.data.current) return;
-
-      const draggedTaskId = active.id as string;
-      const newStatus = over.id as Task['status'];
-      const task = tasksById[draggedTaskId];
-      if (!task || task.status === newStatus) return;
-
-      try {
-        await tasksApi.update(draggedTaskId, {
-          title: task.title,
-          description: task.description,
-          status: newStatus,
-          parent_task_attempt: task.parent_task_attempt,
-          image_ids: null,
-        });
-        // UI will update via WebSocket stream
-      } catch (err) {
-        setError('Failed to update task status');
-      }
-    },
-    [tasksById]
   );
 
   // Initialize project when projectId changes
@@ -492,11 +275,9 @@ export function ProjectTasks() {
   }
 
   return (
-    <div
-      className={`min-h-full ${getMainContainerClasses(isPanelOpen, isFullscreen)}`}
-    >
+    <div className="min-h-full">
       {streamError && (
-        <Alert className="w-full z-30 xl:sticky xl:top-0">
+        <Alert className="w-full z-30 sticky top-0">
           <AlertTitle className="flex items-center gap-2">
             <AlertTriangle size="16" />
             {t('common:states.reconnecting')}
@@ -505,71 +286,47 @@ export function ProjectTasks() {
         </Alert>
       )}
 
-      {/* Kanban + Panel Container - uses side-by-side layout on xl+ */}
-      <div className="flex-1 min-h-0 xl:flex">
-        {/* Left Column - Kanban Section */}
-        <div className={getKanbanSectionClasses(isPanelOpen, isFullscreen)}>
+      {/* Show thread list or detail panel */}
+      {isPanelOpen && selectedTask ? (
+        <TaskDetailsPanel
+          task={selectedTask}
+          projectHasDevScript={!!project?.dev_script}
+          projectId={projectId!}
+          onClose={handleClosePanel}
+          onEditTask={handleEditTaskCallback}
+          onDeleteTask={handleDeleteTask}
+          onNavigateToTask={(taskId) => {
+            const task = tasksById[taskId];
+            if (task) {
+              handleViewTaskDetails(task);
+            }
+          }}
+          selectedAttempt={selectedAttempt}
+          attempts={attempts}
+          setSelectedAttempt={setSelectedAttempt}
+          tasksById={tasksById}
+        />
+      ) : (
+        <div className="max-w-5xl mx-auto px-4 py-6">
           {tasks.length === 0 ? (
-            <div className="max-w-7xl mx-auto mt-8">
-              <Card>
-                <CardContent className="text-center py-8">
-                  <p className="text-muted-foreground">{t('empty.noTasks')}</p>
-                  <Button className="mt-4" onClick={handleCreateNewTask}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('empty.createFirst')}
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="max-w-7xl mx-auto mt-8">
-              <Card>
-                <CardContent className="text-center py-8">
-                  <p className="text-muted-foreground">
-                    {t('empty.noSearchResults')}
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+            <Card>
+              <CardContent className="text-center py-8">
+                <p className="text-muted-foreground">{t('empty.noTasks')}</p>
+                <Button className="mt-4" onClick={handleCreateNewTask}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('empty.createFirst')}
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="w-full h-full">
-              <TaskKanbanBoard
-                groupedTasks={groupedFilteredTasks}
-                onDragEnd={handleDragEnd}
-                onEditTask={handleEditTaskCallback}
-                onDeleteTask={handleDeleteTask}
-                onDuplicateTask={handleDuplicateTaskCallback}
-                onViewTaskDetails={handleViewTaskDetails}
-                selectedTask={selectedTask || undefined}
-                onCreateTask={handleCreateNewTask}
-              />
-            </div>
+            <ThreadList
+              tasks={filteredTasks}
+              onTaskClick={handleViewTaskDetails}
+              loading={isLoading}
+            />
           )}
         </div>
-
-        {/* Right Column - Task Details Panel */}
-        {isPanelOpen && (
-          <TaskDetailsPanel
-            task={selectedTask}
-            projectHasDevScript={!!project?.dev_script}
-            projectId={projectId!}
-            onClose={handleClosePanel}
-            onEditTask={handleEditTaskCallback}
-            onDeleteTask={handleDeleteTask}
-            onNavigateToTask={(taskId) => {
-              const task = tasksById[taskId];
-              if (task) {
-                handleViewTaskDetails(task, undefined, true);
-              }
-            }}
-            isFullScreen={isFullscreen}
-            selectedAttempt={selectedAttempt}
-            attempts={attempts}
-            setSelectedAttempt={setSelectedAttempt}
-            tasksById={tasksById}
-          />
-        )}
-      </div>
+      )}
     </div>
   );
 }

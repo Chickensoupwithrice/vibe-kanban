@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,11 +9,42 @@ import { Project } from 'shared/types';
 import { showProjectForm } from '@/lib/modals';
 import { projectsApi } from '@/lib/api';
 import { AlertCircle, Loader2, Plus } from 'lucide-react';
-import ProjectCard from '@/components/projects/ProjectCard.tsx';
+import ProjectWithThreads from '@/components/projects/ProjectWithThreads';
 import { useKeyCreate, Scope } from '@/keyboard';
+import { useProjectTasks } from '@/hooks/useProjectTasks';
+
+interface ProjectWithThreadsWrapperProps {
+  project: Project;
+  onThreadClick: (projectId: string, taskId: string) => void;
+  onEdit: (project: Project) => void;
+  onDelete: () => void;
+  setError: (error: string) => void;
+}
+
+function ProjectWithThreadsWrapper({
+  project,
+  onThreadClick,
+  onEdit,
+  onDelete,
+  setError,
+}: ProjectWithThreadsWrapperProps) {
+  const { tasks } = useProjectTasks(project.id);
+
+  return (
+    <ProjectWithThreads
+      project={project}
+      tasks={tasks}
+      onThreadClick={onThreadClick}
+      onEdit={onEdit}
+      fetchProjects={onDelete}
+      setError={setError}
+    />
+  );
+}
 
 export function ProjectList() {
   const { t } = useTranslation('projects');
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -69,6 +101,10 @@ export function ProjectList() {
     fetchProjects();
   }, []);
 
+  const handleThreadClick = (projectId: string, taskId: string) => {
+    navigate(`/projects/${projectId}/tasks/${taskId}`);
+  };
+
   return (
     <div className="space-y-6 p-8 pb-16 md:pb-8 h-full overflow-auto">
       <div className="flex justify-between items-center">
@@ -111,15 +147,15 @@ export function ProjectList() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-6">
           {projects.map((project) => (
-            <ProjectCard
+            <ProjectWithThreadsWrapper
               key={project.id}
               project={project}
-              isFocused={focusedProjectId === project.id}
-              setError={setError}
+              onThreadClick={handleThreadClick}
               onEdit={handleEditProject}
-              fetchProjects={fetchProjects}
+              onDelete={() => fetchProjects()}
+              setError={setError}
             />
           ))}
         </div>

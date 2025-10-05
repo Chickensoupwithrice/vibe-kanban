@@ -52,38 +52,12 @@ export const useKeySubmit = createSemanticHook(Action.SUBMIT);
 export const useKeyFocusSearch = createSemanticHook(Action.FOCUS_SEARCH);
 
 /**
- * Navigation actions - arrow keys and vim keys (hjkl)
- */
-export const useKeyNavUp = createSemanticHook(Action.NAV_UP);
-export const useKeyNavDown = createSemanticHook(Action.NAV_DOWN);
-export const useKeyNavLeft = createSemanticHook(Action.NAV_LEFT);
-export const useKeyNavRight = createSemanticHook(Action.NAV_RIGHT);
-
-/**
- * Open details action - typically Enter key
- *
- * @example
- * useKeyOpenDetails(() => openTaskDetails(), { scope: Scope.KANBAN });
- */
-export const useKeyOpenDetails = createSemanticHook(Action.OPEN_DETAILS);
-
-/**
  * Show help action - typically '?' key
  *
  * @example
  * useKeyShowHelp(() => openHelpDialog(), { scope: Scope.GLOBAL });
  */
 export const useKeyShowHelp = createSemanticHook(Action.SHOW_HELP);
-
-/**
- * Toggle fullscreen action - typically Cmd+Enter key
- *
- * @example
- * useKeyToggleFullscreen(() => toggleFullscreen(), { scope: Scope.TASK_PANEL });
- */
-export const useKeyToggleFullscreen = createSemanticHook(
-  Action.TOGGLE_FULLSCREEN
-);
 
 /**
  * Delete task action - typically 'd' key
