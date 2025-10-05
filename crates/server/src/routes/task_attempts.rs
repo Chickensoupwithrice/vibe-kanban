@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use services::services::{
     container::ContainerService,
     git::ConflictOp,
-    github_service::{CreatePrRequest, GitHubService, GitHubServiceError},
+    github_service::GitHubServiceError,
     image::ImageService,
 };
 use sqlx::Error as SqlxError;
@@ -1146,14 +1146,30 @@ pub async fn push_task_attempt_branch(
     Extension(task_attempt): Extension<TaskAttempt>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
-    let config = deployment.config().read().await;
-    let github_config = config.github_config().cloned();
-    let Some(github_token) = github_config.and_then(|c| c.token()) else {
-        return Err(GitHubServiceError::TokenInvalid.into());
-    };
+    use services::services::forge::ForgeFactory;
 
-    let github_service = GitHubService::new(&github_token)?;
-    github_service.check_token().await?;
+    let pool = &deployment.db().pool;
+    let task = task_attempt
+        .parent_task(pool)
+        .await?
+        .ok_or(ApiError::TaskAttempt(TaskAttemptError::TaskNotFound))?;
+    let project = Project::find_by_id(pool, task.project_id)
+        .await?
+        .ok_or(ApiError::Project(ProjectError::ProjectNotFound))?;
+
+    // Get the remote URL to detect which forge to use
+    let remote_url = deployment.git().get_remote_url(&project.git_repo_path)
+        .map_err(|e| ApiError::GitService(e))?;
+
+    let config = deployment.config().read().await;
+    let (forge_service, _repo_info) = ForgeFactory::from_remote_url(&remote_url, &config.forges)
+        .map_err(|e| {
+            GitHubServiceError::Repository(format!("Could not detect forge: {}", e))
+        })?;
+
+    // Verify token is valid
+    forge_service.check_token().await
+        .map_err(|e| GitHubServiceError::Repository(format!("{}", e)))?;
 
     let branch_name = task_attempt.branch.as_ref().ok_or_else(|| {
         ApiError::TaskAttempt(TaskAttemptError::ValidationError(
@@ -1167,9 +1183,15 @@ pub async fn push_task_attempt_branch(
             .await?,
     );
 
+    // Get token for push
+    let forge_token = config.forges.iter()
+        .find(|f| f.forge_type == _repo_info.forge_type)
+        .and_then(|c| c.token())
+        .ok_or_else(|| GitHubServiceError::TokenInvalid)?;
+
     deployment
         .git()
-        .push_to_github(&ws_path, branch_name, &github_token)?;
+        .push_to_github(&ws_path, branch_name, &forge_token)?;
     Ok(ResponseJson(ApiResponse::success(())))
 }
 
@@ -1178,15 +1200,34 @@ pub async fn create_github_pr(
     State(deployment): State<DeploymentImpl>,
     Json(request): Json<CreateGitHubPrRequest>,
 ) -> Result<ResponseJson<ApiResponse<String, GitHubServiceError>>, ApiError> {
+    use services::services::forge::ForgeFactory;
+
+    let pool = &deployment.db().pool;
+    let task = task_attempt
+        .parent_task(pool)
+        .await?
+        .ok_or(ApiError::TaskAttempt(TaskAttemptError::TaskNotFound))?;
+    let project = Project::find_by_id(pool, task.project_id)
+        .await?
+        .ok_or(ApiError::Project(ProjectError::ProjectNotFound))?;
+
+    // Get the remote URL to detect which forge to use
+    let remote_url = deployment.git().get_remote_url(&project.git_repo_path)
+        .map_err(|e| ApiError::GitService(e))?;
+
+    // Get all forge configs and auto-detect the correct one
     let config = deployment.config().read().await;
-    let github_config = config.github_config().cloned();
-    let Some(github_token) = github_config.as_ref().and_then(|c| c.token()) else {
-        return Ok(ResponseJson(ApiResponse::error_with_data(
-            GitHubServiceError::TokenInvalid,
-        )));
-    };
-    // Create GitHub service instance
-    let github_service = GitHubService::new(&github_token)?;
+    
+    let (forge_service, repo_info) = ForgeFactory::from_remote_url(&remote_url, &config.forges)
+        .map_err(|e| {
+            tracing::error!("Failed to detect forge from URL {}: {}", remote_url, e);
+            GitHubServiceError::Repository(format!("Could not detect git forge from repository URL: {}", e))
+        })?;
+
+    // Get default base branch from the matching forge config
+    let default_base = repo_info.forge_type;
+    let github_config = config.forges.iter()
+        .find(|f| f.forge_type == default_base);
     // Get the task attempt to access the stored base branch
     let base_branch = request.base_branch.unwrap_or_else(|| {
         // Use the stored base branch from the task attempt as the default
@@ -1201,15 +1242,6 @@ pub async fn create_github_pr(
         }
     });
 
-    let pool = &deployment.db().pool;
-    let task = task_attempt
-        .parent_task(pool)
-        .await?
-        .ok_or(ApiError::TaskAttempt(TaskAttemptError::TaskNotFound))?;
-    let project = Project::find_by_id(pool, task.project_id)
-        .await?
-        .ok_or(ApiError::Project(ProjectError::ProjectNotFound))?;
-
     // Get branch name from task attempt
     let branch_name = task_attempt.branch.as_ref().ok_or_else(|| {
         ApiError::TaskAttempt(TaskAttemptError::ValidationError(
@@ -1223,18 +1255,23 @@ pub async fn create_github_pr(
             .await?,
     );
 
-    // Push the branch to GitHub first
+    // Push the branch to remote first
+    // For forge services, we need the token to push
+    let forge_token = github_config.and_then(|c| c.token()).ok_or_else(|| {
+        GitHubServiceError::TokenInvalid
+    })?;
+    
     if let Err(e) = deployment
         .git()
-        .push_to_github(&workspace_path, branch_name, &github_token)
+        .push_to_github(&workspace_path, branch_name, &forge_token)
     {
-        tracing::error!("Failed to push branch to GitHub: {}", e);
+        tracing::error!("Failed to push branch to forge: {}", e);
         let gh_e = GitHubServiceError::from(e);
         if gh_e.is_api_data() {
             return Ok(ResponseJson(ApiResponse::error_with_data(gh_e)));
         } else {
             return Ok(ResponseJson(ApiResponse::error(
-                format!("Failed to push branch to GitHub: {}", gh_e).as_str(),
+                format!("Failed to push branch to forge: {}", gh_e).as_str(),
             )));
         }
     }
@@ -1258,19 +1295,16 @@ pub async fn create_github_pr(
     } else {
         base_branch
     };
-    // Create the PR using GitHub service
-    let pr_request = CreatePrRequest {
+    // Create the PR using detected forge service
+    use services::services::forge::CreatePrRequest as ForgePrRequest;
+    let pr_request = ForgePrRequest {
         title: request.title.clone(),
         body: request.body.clone(),
         head_branch: branch_name.clone(),
         base_branch: norm_base_branch_name.clone(),
     };
-    // Use GitService to get the remote URL, then create GitHubRepoInfo
-    let repo_info = deployment
-        .git()
-        .get_github_repo_info(&project.git_repo_path)?;
 
-    match github_service.create_pr(&repo_info, &pr_request).await {
+    match forge_service.create_pr(&repo_info, &pr_request).await {
         Ok(pr_info) => {
             // Update the task attempt with PR information
             if let Err(e) = Merge::create_pr(
@@ -1304,15 +1338,25 @@ pub async fn create_github_pr(
         }
         Err(e) => {
             tracing::error!(
-                "Failed to create GitHub PR for attempt {}: {}",
+                "Failed to create PR for attempt {}: {}",
                 task_attempt.id,
                 e
             );
-            if e.is_api_data() {
-                Ok(ResponseJson(ApiResponse::error_with_data(e)))
+            // Convert ForgeError to GitHubServiceError for API compatibility
+            let gh_err = match e {
+                services::services::forge::ForgeError::TokenInvalid => GitHubServiceError::TokenInvalid,
+                services::services::forge::ForgeError::InsufficientPermissions => GitHubServiceError::InsufficientPermissions,
+                services::services::forge::ForgeError::RepoNotFoundOrNoAccess => GitHubServiceError::RepoNotFoundOrNoAccess,
+                services::services::forge::ForgeError::Repository(msg) => GitHubServiceError::Repository(msg),
+                services::services::forge::ForgeError::PullRequest(msg) => GitHubServiceError::PullRequest(msg),
+                services::services::forge::ForgeError::Branch(msg) => GitHubServiceError::Branch(msg),
+                other => GitHubServiceError::Repository(format!("{}", other)),
+            };
+            if gh_err.is_api_data() {
+                Ok(ResponseJson(ApiResponse::error_with_data(gh_err)))
             } else {
                 Ok(ResponseJson(ApiResponse::error(
-                    format!("Failed to create PR: {}", e).as_str(),
+                    format!("Failed to create PR: {}", gh_err).as_str(),
                 )))
             }
         }

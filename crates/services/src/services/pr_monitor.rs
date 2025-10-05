@@ -89,19 +89,30 @@ impl PrMonitorService {
 
     /// Check the status of a specific PR
     async fn check_pr_status(&self, pr_merge: &PrMerge) -> Result<(), PrMonitorError> {
+        use crate::services::forge::ForgeFactory;
+
+        // Detect forge from PR URL
         let config = self.config.read().await;
-        let github_config = config.github_config().cloned();
-        let github_token = github_config
-            .and_then(|c| c.token())
-            .ok_or(PrMonitorError::NoGitHubToken)?;
+        let (forge_service, repo_info) = ForgeFactory::from_remote_url(&pr_merge.pr_info.url, &config.forges)
+            .map_err(|e| {
+                PrMonitorError::GitHubServiceError(GitHubServiceError::Repository(
+                    format!("Could not detect forge from PR URL: {}", e)
+                ))
+            })?;
 
-        let github_service = GitHubService::new(&github_token)?;
-
-        let repo_info = GitHubRepoInfo::from_remote_url(&pr_merge.pr_info.url)?;
-
-        let pr_status = github_service
-            .update_pr_status(&repo_info, pr_merge.pr_info.number)
-            .await?;
+        let pr_status = forge_service
+            .get_pr_status(&repo_info, pr_merge.pr_info.number)
+            .await
+            .map_err(|e| {
+                // Convert ForgeError to GitHubServiceError for now
+                match e {
+                    crate::services::forge::ForgeError::TokenInvalid => 
+                        PrMonitorError::GitHubServiceError(GitHubServiceError::TokenInvalid),
+                    other => PrMonitorError::GitHubServiceError(
+                        GitHubServiceError::Repository(format!("{}", other))
+                    ),
+                }
+            })?;
 
         debug!(
             "PR #{} status: {:?} (was open)",

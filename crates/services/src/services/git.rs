@@ -1601,11 +1601,8 @@ impl GitService {
         }
     }
 
-    /// Extract GitHub owner and repo name from git repo path
-    pub fn get_github_repo_info(
-        &self,
-        repo_path: &Path,
-    ) -> Result<GitHubRepoInfo, GitServiceError> {
+    /// Get the remote URL from a git repository
+    pub fn get_remote_url(&self, repo_path: &Path) -> Result<String, GitServiceError> {
         let repo = self.open_repo(repo_path)?;
         let remote_name = self.default_remote_name(&repo);
         let remote = repo.find_remote(&remote_name).map_err(|_| {
@@ -1615,7 +1612,16 @@ impl GitService {
         let url = remote
             .url()
             .ok_or_else(|| GitServiceError::InvalidRepository("Remote has no URL".to_string()))?;
-        GitHubRepoInfo::from_remote_url(url).map_err(|e| {
+        Ok(url.to_string())
+    }
+
+    /// Extract GitHub owner and repo name from git repo path
+    pub fn get_github_repo_info(
+        &self,
+        repo_path: &Path,
+    ) -> Result<GitHubRepoInfo, GitServiceError> {
+        let url = self.get_remote_url(repo_path)?;
+        GitHubRepoInfo::from_remote_url(&url).map_err(|e| {
             GitServiceError::InvalidRepository(format!("Failed to parse remote URL: {e}"))
         })
     }
