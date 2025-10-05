@@ -8,6 +8,7 @@ pub mod file_ranker;
 pub mod file_search_cache;
 pub mod filesystem;
 pub mod filesystem_watcher;
+pub mod forge;
 pub mod git;
 pub mod git_cli;
 pub mod github_service;
