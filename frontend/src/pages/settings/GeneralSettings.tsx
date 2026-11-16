@@ -156,21 +156,25 @@ export function GeneralSettings() {
     updateAndSaveConfig({ onboarding_acknowledged: false });
   };
 
+  // Get GitHub forge config (first GitHub entry in forges array)
+  const githubConfig = config?.forges?.find(f => f.forge_type === 'GIT_HUB');
+  
   const isAuthenticated = !!(
-    config?.github?.username && config?.github?.oauth_token
+    githubConfig?.username && githubConfig?.oauth_token
   );
 
   const handleLogout = useCallback(async () => {
-    if (!config) return;
-    updateAndSaveConfig({
-      github: {
-        ...config.github,
-        oauth_token: null,
-        username: null,
-        primary_email: null,
-      },
-    });
-  }, [config, updateAndSaveConfig]);
+    if (!config || !githubConfig) return;
+    
+    // Update the GitHub forge config in the forges array
+    const updatedForges = config.forges.map(f => 
+      f.forge_type === 'GIT_HUB' 
+        ? { ...f, oauth_token: null, username: null, primary_email: null }
+        : f
+    );
+    
+    updateAndSaveConfig({ forges: updatedForges });
+  }, [config, githubConfig, updateAndSaveConfig]);
 
   if (loading) {
     return (
@@ -453,19 +457,19 @@ export function GeneralSettings() {
         <CardContent className="space-y-4">
           {isAuthenticated ? (
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 border rounded-lg">
-                <div>
-                  <p className="font-medium">
-                    {t('settings.general.github.connected', {
-                      username: config.github.username,
-                    })}
-                  </p>
-                  {config.github.primary_email && (
-                    <p className="text-sm text-muted-foreground">
-                      {config.github.primary_email}
-                    </p>
-                  )}
-                </div>
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div>
+            <p className="font-medium">
+            {t('settings.general.github.connected', {
+            username: githubConfig?.username,
+            })}
+            </p>
+            {githubConfig?.primary_email && (
+            <p className="text-sm text-muted-foreground">
+            {githubConfig.primary_email}
+            </p>
+            )}
+            </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm">
@@ -514,15 +518,16 @@ export function GeneralSettings() {
               id="github-token"
               type="password"
               placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-              value={draft?.github.pat || ''}
-              onChange={(e) =>
-                updateDraft({
-                  github: {
-                    ...draft!.github,
-                    pat: e.target.value || null,
-                  },
-                })
-              }
+              value={draft?.forges?.find(f => f.forge_type === 'GIT_HUB')?.pat || ''}
+              onChange={(e) => {
+                if (!draft) return;
+                const updatedForges = draft.forges.map(f => 
+                  f.forge_type === 'GIT_HUB' 
+                    ? { ...f, pat: e.target.value || null }
+                    : f
+                );
+                updateDraft({ forges: updatedForges });
+              }}
             />
             <p className="text-sm text-muted-foreground">
               {t('settings.general.github.pat.helper')}{' '}

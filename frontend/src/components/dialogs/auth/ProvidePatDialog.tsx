@@ -29,12 +29,14 @@ export const ProvidePatDialog = NiceModal.create<ProvidePatDialogProps>(
       setSaving(true);
       setError(null);
       try {
-        await updateAndSaveConfig({
-          github: {
-            ...config.github,
-            pat,
-          },
-        });
+        // Update the GitHub forge config in the forges array
+        const updatedForges = config.forges.map(f => 
+          f.forge_type === 'GIT_HUB' 
+            ? { ...f, pat }
+            : f
+        );
+        
+        await updateAndSaveConfig({ forges: updatedForges });
         modal.resolve(true);
         modal.hide();
       } catch (err) {

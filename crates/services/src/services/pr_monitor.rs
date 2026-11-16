@@ -15,7 +15,7 @@ use tracing::{debug, error, info};
 
 use crate::services::{
     config::Config,
-    github_service::{GitHubRepoInfo, GitHubService, GitHubServiceError},
+    github_service::GitHubServiceError,
 };
 
 #[derive(Debug, Error)]
